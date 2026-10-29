@@ -5,7 +5,7 @@ approve with ``orca --approve-extension caps_lock_fix``; Orca re-checks the
 hash of every file in the package on each start, so re-approve after editing.
 """
 
-__version__ = "2.0.0"
+__version__ = "2.0.1"
 
 from orca.extension import Extension
 from orca.extension_preferences import ExtensionPreference
@@ -31,7 +31,7 @@ class CapsLockFix(Extension):
         "rather than from the release of the first, so holding the modifier and "
         "then pressing it again no longer reads as a request to toggle the lock."
     )
-    VERSION = "2.0.0"  # keep in sync with __version__; read by AST, must be a literal
+    VERSION = "2.0.1"  # keep in sync with __version__; read by AST, must be a literal
     AUTHOR = "Toby"
 
     def get_preferences(self) -> list[ExtensionPreference]:

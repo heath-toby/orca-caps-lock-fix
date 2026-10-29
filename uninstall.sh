@@ -2,7 +2,7 @@
 # Caps Lock Fix for Orca -- Uninstaller
 #
 # Removes the extension package and revokes its Orca approval. Settings are
-# left alone, under /org/gnome/orca/<profile>/extensions/indent-beeper/, so a
+# left alone, under /org/gnome/orca/<profile>/extensions/caps-lock-fix/, so a
 # reinstall picks up where you left off. Pass --purge to remove them too.
 
 set -euo pipefail
@@ -10,7 +10,7 @@ set -euo pipefail
 ADDON_NAME="caps_lock_fix"
 # Orca sanitises the namespace for the settings path, and an underscore becomes
 # a dash -- so the package is caps_lock_fix and its dconf path is not.
-SETTINGS_NAME="indent-beeper"
+SETTINGS_NAME="caps-lock-fix"
 ORCA_DIR="${XDG_DATA_HOME:-$HOME/.local/share}/orca"
 ADDON_DIR="$ORCA_DIR/extensions/$ADDON_NAME"
 

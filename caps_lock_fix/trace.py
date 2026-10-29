@@ -1,10 +1,13 @@
-"""One debug log, shared by both halves of the extension.
+"""The extension's debug log.
 
-Both the click counter and the lock toggle want to write to the same file, on
-the same timeline, so that a line from one can be read against a line from the
-other -- and against ``tools/true-lock-log.py``, which uses the same wall
-clock. Two modules each opening the same path with their own handle is how you
-get interleaved half-lines.
+One writer, one handle. It was shared by two modules when there were two --
+the click counter and the lock toggle -- so that a line from either could be
+read against the other on the same timeline, and against
+``tools/true-lock-log.py``, which uses the same wall clock. 2.0.0 removed the
+lock toggle, so the click counter is the only writer now; the shape stays
+because the file is still read beside that tool, and because two modules each
+opening the same path with their own handle is how you get interleaved
+half-lines.
 
 Never inside the extension package: Orca hashes every file in it and would
 refuse to load a package whose log had grown.
@@ -40,6 +43,32 @@ def enabled() -> bool:
         return False
 
 
+# Diagnostics get left on. A log that grows without bound for as long as that
+# setting is true is a trap, so the file is rolled once past this size and the
+# previous run is kept beside it as .log.1.
+MAX_BYTES = 2 * 1024 * 1024
+
+
+def _roll_if_large() -> None:
+    """Keep one old log and start a new one, if the current one is big."""
+    try:
+        if os.path.getsize(PATH) < MAX_BYTES:
+            return
+    except OSError:
+        return
+    global _handle
+    try:
+        if _handle is not None:
+            _handle.close()
+    except OSError:
+        pass
+    _handle = None
+    try:
+        os.replace(PATH, PATH + ".1")
+    except OSError:
+        pass
+
+
 def log(message: str) -> None:
     """Append one timestamped line, if diagnostics are on."""
     global _handle
@@ -48,9 +77,12 @@ def log(message: str) -> None:
     try:
         if _handle is None:
             os.makedirs(_DIR, exist_ok=True)
+            _roll_if_large()
             _handle = open(PATH, "a")  # pylint: disable=consider-using-with
         stamp = time.strftime("%H:%M:%S")
         _handle.write(f"{stamp}.{int(time.time() * 1000) % 1000:03d} {message}\n")
         _handle.flush()
+        if _handle.tell() >= MAX_BYTES:
+            _roll_if_large()
     except Exception:  # pylint: disable=broad-exception-caught
         pass

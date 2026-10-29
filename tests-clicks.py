@@ -205,6 +205,36 @@ check("an event that misbehaves leaves Orca's count alone",
 
 clicks._orig_determine = saved
 
+# --- the diagnostic log must not grow for ever ---------------------------
+# Diagnostics get left on. A log that appends without bound for as long as
+# that setting is true is a trap for the person who forgot.
+import tempfile  # noqa: E402
+
+from caps_lock_fix import trace  # noqa: E402
+
+saved_dir, saved_path, saved_handle = trace._DIR, trace.PATH, trace._handle
+saved_max = trace.MAX_BYTES
+scratch = tempfile.mkdtemp(prefix="caps-lock-fix-trace-")
+trace._DIR = scratch
+trace.PATH = os.path.join(scratch, "debug.log")
+trace._handle = None
+trace.MAX_BYTES = 2048
+trace.configure(lambda: {"debug": True})
+
+for _ in range(200):
+    trace.log("x" * 64)
+
+check("the log rolls once it is large",
+      os.path.exists(trace.PATH + ".1"), True)
+check("...and the live log is back under the limit",
+      os.path.getsize(trace.PATH) < trace.MAX_BYTES, True)
+
+trace.configure(None)
+check("a log with no settings source writes nothing", trace.enabled(), False)
+
+trace._DIR, trace.PATH, trace._handle = saved_dir, saved_path, saved_handle
+trace.MAX_BYTES = saved_max
+
 width = max(len(r[0]) for r in rows)
 print()
 for name, want, got, status in rows:

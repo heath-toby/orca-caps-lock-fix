@@ -1,5 +1,30 @@
 # Changelog
 
+## 2.0.1
+
+Three fixes from a code review of 2.0.0, one of them destructive.
+
+**`./uninstall.sh --purge` wiped a different add-on's settings.**
+`SETTINGS_NAME` was `"indent-beeper"`, carried over from the project this
+script was adapted from, so `--purge` reset
+`/org/gnome/orca/default/extensions/indent-beeper/` — destroying Indent
+Beeper's tone volume, duration and beep-on-change — while leaving this
+extension's own `window-ms` and `debug` in place and reporting that it had
+removed them.
+
+**The diagnostic log grew without bound.** Diagnostics get left on, and a file
+that appends for as long as that setting is true is a trap for whoever forgot.
+It now rolls past 2MB and keeps one previous log beside it as `debug.log.1`.
+
+**`uninstall()` left the trace module holding a callable into the settings of
+an uninstalled extension**, where it went on deciding whether to log from them.
+Cleared now — shutting a module down has to release what it handed out, not
+only what it holds.
+
+Also: `trace.py`'s docstring still described itself as shared between two
+halves of the extension, and 2.0.0 removed the other half. 26 test rows, up
+from 23.
+
 ## 2.0.0
 
 **The lock-state half is removed.** It was built on a model of caps lock on

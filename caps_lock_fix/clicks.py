@@ -229,6 +229,11 @@ def uninstall() -> None:
         _orig_determine)
     _orig_determine = None
     _settings_source = None
+    # Otherwise the trace module keeps a callable into the settings of an
+    # extension that is no longer installed, and goes on deciding whether to
+    # log from them. See feedback on singleton teardown: shutting a module
+    # down has to clear what it handed out, not just what it holds.
+    _configure_trace(None)
     _last_press.clear()
     _installed = False
     _log.info("CapsLockFix: restored Orca's own click counting.")
