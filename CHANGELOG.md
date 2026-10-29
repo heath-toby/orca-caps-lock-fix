@@ -1,5 +1,47 @@
 # Changelog
 
+## 2.1.0
+
+**The caps lock indication moves in, and learns to speak.**
+
+A tone for "caps lock is on" shipped in CapitalBeep as v2.2.0 and did not
+belong there: CapitalBeep is about a capital being *read*, and this is about
+caps lock being *on*, which is this extension's whole subject. Toby, making the
+call: *"Leave Capital Beep as Capital Beep. Move the caps lock indicator to
+caps lock fix, and that's where we can also add the ability if enabled to speak
+each typed character while caps lock is on."*
+
+So **Orca Preferences → User Extensions → Caps Lock Fix → Warn that caps lock
+is on** now has four values. The first three are the ones from CapitalBeep,
+under the same labels verbatim — a screen reader user navigates a dialog by
+remembered label text, and a port that rewords as it moves costs them what they
+already knew:
+
+- *When a lowercase letter is typed, because caps lock is on* (the default, and
+  NVDA's since about 2010)
+- *On every letter typed while caps lock is on*
+- **new:** *Speak each letter typed while caps lock is on*
+- *Never*
+
+The new one is the mode Fenrir has, and it is a better answer than a tone for
+anyone who left caps lock on by accident: a beep says something is wrong, a
+read letter says what. It speaks through `SpeechPresenter.speak_character`,
+which is also the method CapitalBeep wraps — so with both add-ons installed
+each letter is announced *and* carries CapitalBeep's capital beep. That is the
+point rather than a coincidence of wiring. Toby: *"if it's beeping with each
+letter, that can continue connecting with 'these are all capitals', which makes
+a lot of sense."*
+
+Also moved across: the pitch setting, the detection from the arrived character
+rather than a lock bit, the "a letter with the Orca modifier held is a command"
+exclusion — reading the event's own mask, as CapitalBeep 2.2.1 had to be fixed
+to do — and the 1320 Hz default, an octave above the capital beep so the two
+cannot be confused. `tone.py` came with it, so this add-on now renders and
+plays audio where before it made no sound at all.
+
+49 test rows for the indication, ported from CapitalBeep and extended for the
+speaking mode, plus 26 for the double press.
+
 ## 2.0.1
 
 Three fixes from a code review of 2.0.0, one of them destructive.

@@ -1,9 +1,13 @@
 # Caps Lock Fix for Orca
 
-An Orca 51 user extension that counts a double press of the Orca modifier from
-one press to the **next press**, rather than from the release of the first.
+An Orca 51 user extension with two halves, both about caps lock:
 
-## The problem
+- **the double press**, counted from one press to the next rather than from the
+  release of the first, so holding the modifier is not a request to toggle the
+  lock; and
+- **the indication**, a tone or the letters themselves, when caps lock is on.
+
+## The double press
 
 Orca treats two presses of its modifier key as a double press, which passes the
 key through to the system — on the laptop keyboard layout, that is how Caps Lock
@@ -44,6 +48,61 @@ Two deliberate limits:
   here can do is fail to pass the modifier through, costing you a second double
   press. It cannot invent a command you did not ask for.
 
+## Telling you caps lock is on
+
+**Orca Preferences → User Extensions → Caps Lock Fix → Warn that caps lock is
+on**, with four values:
+
+- *When a lowercase letter is typed, because caps lock is on* — the default.
+  You held shift, caps lock was already on, and you got the opposite of what
+  you asked for. This is the case NVDA has shipped on by default since about
+  2010 under the name "Beep for lowercase with Capslock", and its purpose is
+  catching caps lock left on by mistake — classically while typing a password.
+- *On every letter typed while caps lock is on* — noisier, but it tells you at
+  the first keystroke rather than waiting for you to reach for shift, which is
+  what you want at a shell prompt where a whole command may never need shift.
+- *Speak each letter typed while caps lock is on* — the one Fenrir has, and a
+  better answer than a tone for anyone who left caps lock on by accident: a
+  beep says something is wrong, a read letter says what. It speaks through
+  `SpeechPresenter.speak_character`, which is also the method CapitalBeep
+  wraps, so with both add-ons installed each letter is announced *and* carries
+  CapitalBeep's capital beep. That is the point rather than a coincidence: the
+  beep on each letter keeps saying "these are all capitals" while the letters
+  tell you which.
+- *Never*.
+
+*Pitch of the caps lock warning* is 1320 Hz by default, an octave above
+CapitalBeep's 660 Hz capital beep so the two cannot be confused. NVDA
+distinguishes its two beeps the same way and uses 3000 Hz, which this setting
+will take.
+
+### How caps lock is detected
+
+**From the character that actually arrived, not from a lock bit.** Shift held
+and a lowercase letter means caps lock is on; so does an unshifted uppercase
+one. A lock bit would have to be the *right* lock bit, and on a Wayland
+session there are two — the compositor's and XWayland's copy — with which one
+reaches an add-on depending on how the session routes accessibility key
+events. The letter that came out needs none of that settled: it is decided by
+the same keymap and the same lock state that will type the next one.
+
+It works on any layout that pairs its cases under shift, Cyrillic included.
+
+A letter arriving with the Orca modifier, Alt or Control held is a command,
+not typing, and is ignored. That matters most on the laptop layout, where
+`Caps_Lock` *is* the Orca modifier: without it, Orca+Shift+H to list headings
+arrives as a lowercase `h` with shift held, which is exactly the pattern the
+default mode looks for. CapitalBeep 2.2.0 shipped with that check reading the
+wrong mask and did beep at commands.
+
+### Where this came from
+
+It shipped in CapitalBeep as v2.2.0 and moved here in 2.1.0. CapitalBeep is
+about a capital being *read*; this is about caps lock being *on*. The option
+labels are reproduced verbatim from there, because a screen reader user
+navigates a settings dialog by remembered label text and a port that rewords
+as it moves costs them the thing they already knew.
+
 ## Install
 
     ./install.sh
@@ -67,10 +126,16 @@ on each start, so re-run the installer after editing anything.
   matching Orca's own `_DOUBLE_CLICK_TIMEOUT`. Hands differ: someone who rests a
   finger on the modifier wants it longer, someone who taps fast wants it shorter.
   Read per keypress, so a change takes effect immediately.
+- *Warn that caps lock is on*, and *Pitch of the caps lock warning* — see
+  [Telling you caps lock is on](#telling-you-caps-lock-is-on) above.
 - *Log diagnostics*, off by default. Writes to
   `$XDG_DATA_HOME/orca/caps_lock_fix/debug.log`, one line per lock-key event
   with the mask, the click count Orca computed, the count this extension
-  returned, and what Orca would announce from that mask.
+  returned, and what Orca would announce from that mask. It rolls past 2MB and
+  keeps one previous log as `debug.log.1`, because diagnostics get left on.
+
+All of them are read when needed rather than cached, so a change takes effect
+on the next keypress with no restart.
 
 ## What this does **not** fix
 
@@ -129,11 +194,23 @@ Orca starts normally. A source patch would fail the build and block the upgrade.
 ## Tests
 
 ```
-./install.sh && python3 tests-clicks.py
+./install.sh && python3 tests-clicks.py && python3 tests-indicator.py
 ```
 
-23 rows, driving the rule against fake events with no keyboard and no display.
+`tests-clicks.py` is 26 rows, driving the rule against fake events with no
+keyboard and no display.
 The rule itself is a pure function, `adjust_click_count`, so the whole of it is
 testable: a press after a long hold, a genuine quick double press, a release
 inheriting its press's count, other keys left alone, and an event that
-misbehaves leaving Orca's own count untouched.
+misbehaves leaving Orca's own count untouched. Plus the diagnostic log rolling
+once it is large.
+
+`tests-indicator.py` is 49 rows. `caps_lock_indication_wanted` is also a pure
+function of (pressed, modifiers, text, mode), so the whole rule is a table —
+each mode against a shifted lowercase letter, an unshifted capital, ordinary
+typing, Orca and Alt and Control commands, digits, punctuation, releases and
+Cyrillic. The rest cover the keyboard hook, which sits in front of every key
+Orca builds: that its signature still matches the constructor it replaces,
+that the event is built before anything looks at it, that an indication which
+raises still leaves the key forwarded, that the right mode beeps or speaks,
+and that it tests the event's own mask rather than the argument.
