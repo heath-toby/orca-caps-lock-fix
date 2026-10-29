@@ -226,11 +226,78 @@ beeps.clear(); spoken.clear()
 ci._keyboard_hook(_PlainEvent(), True, 0, 0, SHIFT, "h")
 check("the default mode beeps and says nothing", (len(beeps), spoken), (1, []))
 
+# --- the speaking mode must not speak from the constructor ---------------
+# KeyboardEvent._present runs after the constructor and opens with
+# `if self.is_pressed_key(): interrupt_presentation()`, so anything spoken
+# from __init__ is cut off by the very keystroke that produced it. The beep
+# survived because it is a separate audio pipeline; the speech did not, and
+# Toby heard one letter per word: "character reading is only word reading
+# really, though the capital beep plays."
 ci._settings_source = lambda: {"caps-lock-indicator": SPEAK}
 beeps.clear(); spoken.clear()
 ci._keyboard_hook(_PlainEvent(), True, 0, 0, SHIFT, "h")
-check("the speaking mode reads the letter and does not beep",
-      (beeps, spoken), ([], ["h"]))
+check("the speaking mode does nothing from the constructor",
+      (beeps, spoken), ([], []))
+
+# --- it speaks from the seam after that interrupt ------------------------
+presented = []
+
+
+def _fake_present(self, event):
+    presented.append(getattr(event, "_text", None))
+
+
+class _PresentEvent:
+    """An event as present_keyboard_event receives it."""
+
+    def __init__(self, text, modifiers=SHIFT, pressed=True):
+        self._text = text
+        self.modifiers = modifiers
+        self._pressed = pressed
+
+    def is_pressed_key(self):
+        return self._pressed
+
+
+_saved_present = ci._orig_present_keyboard_event
+ci._orig_present_keyboard_event = _fake_present
+
+spoken.clear(); presented.clear()
+ci._present_hook(None, _PresentEvent("h"))
+check("the speaking mode reads the letter from the present hook",
+      spoken, ["h"])
+check("...after letting Orca present the event first", presented, ["h"])
+
+spoken.clear()
+ci._present_hook(None, _PresentEvent("h", modifiers=SHIFT | ORCA))
+check("...and an Orca command is still not read out", spoken, [])
+
+spoken.clear()
+ci._present_hook(None, _PresentEvent("h", pressed=False))
+check("...nor is a key release", spoken, [])
+
+ci._settings_source = lambda: {"caps-lock-indicator": LOWER}
+spoken.clear(); presented.clear()
+ci._present_hook(None, _PresentEvent("h"))
+check("a beeping mode says nothing from the present hook", spoken, [])
+check("...but Orca still gets to present the event", presented, ["h"])
+
+ci._settings_source = lambda: {"caps-lock-indicator": SPEAK}
+
+
+def _exploding_present(self, event):
+    raise RuntimeError("presentation failed")
+
+
+ci._orig_present_keyboard_event = _exploding_present
+raised = False
+try:
+    ci._present_hook(None, _PresentEvent("h"))
+except RuntimeError:
+    raised = True
+check("a failure in Orca's own presentation is not swallowed by this hook",
+      raised, True)
+ci._orig_present_keyboard_event = _saved_present
 
 # --- the mask tested must be the event's own -----------------------------
 # Orca ORs its modifier bit into self.modifiers *inside* the constructor, so

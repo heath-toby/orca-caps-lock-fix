@@ -1,5 +1,40 @@
 # Changelog
 
+## 2.1.1
+
+**The speaking mode could only be heard one letter per word.** Reported by
+Toby: *"character reading is only word reading really, though the capital beep
+plays. It might be interrupting each character, but as far as I can tell, only
+the first letter of each word is spoken."*
+
+The beep playing while the speech did not is the whole diagnosis. The hook was
+firing for every letter -- CapitalBeep's tone proves it, because that tone is
+driven by the same call -- so the fault was not in the detection but in *where
+the speaking happened from*. `KeyboardEvent.__init__` runs before
+`KeyboardEvent._present`, and `_present` opens with:
+
+```python
+if self.is_pressed_key():
+    presentation_manager.get_manager().interrupt_presentation()
+```
+
+**Every key press interrupts speech.** Anything spoken from the constructor is
+cut off by the very keystroke that produced it. The beep survived because it is
+a separate audio pipeline with nothing to interrupt it.
+
+So the speaking mode is driven from `PresentationManager.present_keyboard_event`
+instead -- the call at the end of `_present`, after that interrupt, and exactly
+where Orca echoes keys itself. It goes through
+`PresentationManager.speak_character`, which supplies the capitalisation style
+from Orca's own settings and still ends at `SpeechPresenter.speak_character`, so
+the letter keeps CapitalBeep's capital beep.
+
+The two beeping modes stay on the constructor hook, where they work and where
+they are reached for every key regardless of what Orca decides to present.
+
+56 test rows, up from 49, including one that fails if the speaking mode ever
+speaks from the constructor again.
+
 ## 2.1.0
 
 **The caps lock indication moves in, and learns to speak.**

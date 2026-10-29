@@ -15,7 +15,7 @@ Two independent halves, both about caps lock:
   about caps lock being *on*.
 """
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 from orca.extension import Extension
 from orca.extension_preferences import ExtensionPreference
@@ -53,7 +53,7 @@ class CapsLockFix(Extension):
         "Also reports that caps lock is on, by a tone or by reading each letter "
         "as it is typed."
     )
-    VERSION = "2.1.0"  # keep in sync with __version__; read by AST, must be a literal
+    VERSION = "2.1.1"  # keep in sync with __version__; read by AST, must be a literal
     AUTHOR = "Toby"
 
     def get_preferences(self) -> list[ExtensionPreference]:

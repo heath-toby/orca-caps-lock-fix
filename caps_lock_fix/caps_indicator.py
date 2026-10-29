@@ -40,7 +40,13 @@ from __future__ import annotations
 import logging
 import os
 
-from orca import input_event, keybindings, speech_manager, speech_presenter
+from orca import (
+    input_event,
+    keybindings,
+    presentation_manager,
+    speech_manager,
+    speech_presenter,
+)
 
 from .tone import BeepPlayer
 from .tone import render_wav
@@ -90,6 +96,7 @@ _DATA_DIR = os.path.join(
 
 _settings_source = None
 _orig_key_init = None
+_orig_present_keyboard_event = None
 _installed = False
 _player: BeepPlayer | None = None
 _pitch_rendered: int | None = None
@@ -182,17 +189,35 @@ def beep() -> None:
 
 
 def speak(letter: str) -> None:
-    """Read the letter out, the way key echo would.
+    """Read the letter out, the way key echo does.
 
-    Through ``SpeechPresenter.speak_character`` deliberately: it is the one
-    point every individually-read character passes through, so the letter is
-    spoken with Orca's own character voice and capitalisation style -- and it
-    is the method CapitalBeep wraps, so a capital also carries its beep.
+    Through ``PresentationManager.speak_character``, which is what Orca's own
+    key echo reaches: it supplies the capitalisation style from Orca's
+    settings and the voice for the character, and it ends at
+    ``SpeechPresenter.speak_character`` -- the one point every individually
+    read character passes through, and the method CapitalBeep wraps, so a
+    capital also carries its beep.
+
+    **Where this is called from matters more than what it calls.** The first
+    version spoke from ``KeyboardEvent.__init__`` and only one letter per word
+    could be heard, which Toby reported as *"character reading is only word
+    reading really, though the capital beep plays."* The beep played because
+    it is a separate audio pipeline; the speech did not, because
+    ``KeyboardEvent._present`` runs after the constructor and begins::
+
+        if self.is_pressed_key():
+            presentation_manager.get_manager().interrupt_presentation()
+
+    Every key press interrupts speech. Anything spoken from the constructor is
+    cut off by the very keystroke that produced it. So the speaking mode is
+    driven from ``present_keyboard_event`` instead, which is the call at the
+    end of ``_present`` -- after that interrupt, and exactly where Orca echoes
+    keys itself.
     """
     if _muted():
         return
     try:
-        speech_presenter.get_presenter().speak_character(letter)
+        presentation_manager.get_manager().speak_character(letter)
     except Exception as error:  # pylint: disable=broad-exception-caught
         _log.warning("CapsLockFix: could not speak %r: %s", letter, error)
         _debug(f"indicator: could not speak {letter!r}: {error}")
@@ -215,26 +240,53 @@ def _keyboard_hook(self, pressed, keycode, keysym, modifiers, text):
         # self.modifiers, not the argument: see _NOT_TYPING_MASK.
         mask = getattr(self, "modifiers", modifiers)
         chosen = mode()
-        wanted = caps_lock_indication_wanted(pressed, mask, text, chosen)
-        if pressed and wanted:
-            _debug(f"indicator: {chosen} for {text!r} mask=0x{mask:x}")
-            if chosen == MODE_SPEAK:
-                speak(text)
-            else:
-                beep()
+        if chosen == MODE_SPEAK:
+            # Not from here: the speech would be interrupted by this very
+            # keystroke. See speak(). The event hook below does it.
+            return
+        if pressed and caps_lock_indication_wanted(pressed, mask, text, chosen):
+            _debug(f"indicator: {chosen} tone for {text!r} mask=0x{mask:x}")
+            beep()
     except Exception as error:  # pylint: disable=broad-exception-caught
         _log.warning("CapsLockFix: caps lock indication failed: %s", error)
+
+
+def _present_hook(self, event):
+    """Read the letter out after Orca has finished interrupting speech.
+
+    ``_present`` interrupts on every key press and then calls this, which is
+    why Orca's own key echo is audible and why a constructor hook is not. The
+    original runs first, so this adds to what Orca presents rather than
+    replacing it -- with key echo off, which is how Toby reads, Orca presents
+    nothing here and the letter is all you hear.
+    """
+    _orig_present_keyboard_event(self, event)
+    try:
+        if mode() != MODE_SPEAK:
+            return
+        text = getattr(event, "_text", "") or ""
+        if not caps_lock_indication_wanted(
+                event.is_pressed_key(), event.modifiers, text, MODE_SPEAK):
+            return
+        _debug(f"indicator: speaking {text!r} mask=0x{event.modifiers:x}")
+        speak(text)
+    except Exception as error:  # pylint: disable=broad-exception-caught
+        _log.warning("CapsLockFix: caps lock speech failed: %s", error)
 
 
 def install(settings_source=None) -> None:
     """Start reporting caps lock. Patched unconditionally; the mode is read
     per keypress, so a change in Preferences takes effect at once."""
     global _settings_source, _orig_key_init, _installed
+    global _orig_present_keyboard_event
     _settings_source = settings_source
     if _installed:
         return
     _orig_key_init = input_event.KeyboardEvent.__init__
     input_event.KeyboardEvent.__init__ = _keyboard_hook
+    manager_class = type(presentation_manager.get_manager())
+    _orig_present_keyboard_event = manager_class.present_keyboard_event
+    manager_class.present_keyboard_event = _present_hook
     _installed = True
     _log.info("CapsLockFix: caps lock indication is '%s'.", mode())
     _debug(f"indicator: installed, mode is '{mode()}'")
@@ -243,10 +295,14 @@ def install(settings_source=None) -> None:
 def uninstall() -> None:
     """Stop reporting, and close the audio device."""
     global _settings_source, _orig_key_init, _installed, _player, _pitch_rendered
+    global _orig_present_keyboard_event
     if not _installed:
         return
     input_event.KeyboardEvent.__init__ = _orig_key_init
     _orig_key_init = None
+    manager_class = type(presentation_manager.get_manager())
+    manager_class.present_keyboard_event = _orig_present_keyboard_event
+    _orig_present_keyboard_event = None
     _installed = False
     _settings_source = None
     if _player is not None:
